@@ -457,6 +457,49 @@ def screenshot_n_repeater_tabs(hwnd, output_dir, count):
     return saved
 
 
+def notify_task_completed(title="Burp Auto-Screenshot", message="Task Completed"):
+    """Pop a standard Windows notification (balloon/toast) when the run finishes.
+
+    Uses the Win32 Shell_NotifyIcon API via pywin32 -- the dependency the tool
+    already relies on -- so it needs no extra packages and makes no network
+    calls. It is best-effort: any failure is swallowed so a missing toast can
+    never mask an otherwise successful capture run.
+    """
+    try:
+        wc = win32gui.WNDCLASS()
+        hinst = wc.hInstance = win32api.GetModuleHandle(None)
+        wc.lpszClassName = "BurpScreenshotNotify"
+        wc.lpfnWndProc = {}  # default handling; we don't process any messages
+        class_atom = win32gui.RegisterClass(wc)
+
+        hwnd = win32gui.CreateWindow(
+            class_atom, "BurpScreenshot",
+            win32con.WS_OVERLAPPED | win32con.WS_SYSMENU,
+            0, 0, win32con.CW_USEDEFAULT, win32con.CW_USEDEFAULT,
+            0, 0, hinst, None,
+        )
+        hicon = win32gui.LoadIcon(0, win32con.IDI_APPLICATION)
+
+        # Add a tray icon, then modify it to raise the balloon notification.
+        add_flags = win32gui.NIF_ICON | win32gui.NIF_MESSAGE | win32gui.NIF_TIP
+        win32gui.Shell_NotifyIcon(
+            win32gui.NIM_ADD,
+            (hwnd, 0, add_flags, win32con.WM_USER + 20, hicon, title),
+        )
+        win32gui.Shell_NotifyIcon(
+            win32gui.NIM_MODIFY,
+            (hwnd, 0, win32gui.NIF_INFO, win32con.WM_USER + 20, hicon,
+             title, message, 200, title),
+        )
+
+        time.sleep(1.0)  # let the toast register before we tear the icon down
+        win32gui.Shell_NotifyIcon(win32gui.NIM_DELETE, (hwnd, 0))
+        win32gui.DestroyWindow(hwnd)
+        win32gui.UnregisterClass(class_atom, hinst)
+    except Exception:
+        pass  # the notification is a nicety; never fail the run over it
+
+
 def main():
     # Parse args:
     #   -R N / --repeater N : capture exactly N Repeater tabs (deterministic).
@@ -516,6 +559,8 @@ def main():
         print("Taking screenshot...")
         saved = take_screenshot(hwnd, output_path)
         print(f"Screenshot saved to: {saved}")
+
+    notify_task_completed(message="Task Completed")
 
 
 if __name__ == "__main__":
